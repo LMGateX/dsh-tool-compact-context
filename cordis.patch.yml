@@ -1,0 +1,18 @@
+# Bundle layer for dsh-tool-compact-context.
+# Add this package to dsh.profile.bundles (after @deepseek-ai/dsh-base), or
+# copy the insert entry into the profile's cordis.patch.yml.
+- insert:
+    - id: dsh-tool-compact-context
+      name: dsh-tool-compact-context
+      config:
+        compactTool: true
+        statusTool: false
+        guidance: false
+        guidanceText: ''
+        pressureContext: false
+        notifyAtRatio: 0.25
+        pressureStep: 10
+        retryAttempts: 2
+        retryDelayMs: 1000
+        ptcTimeoutMs: 0
+        ptcModelTimeouts: {}
