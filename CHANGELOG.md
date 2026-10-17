@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+
+- Skip redundant full-surface measurements on the compaction path: the retained-tail fallback measures once (it previously measured up to three times when the token-meter projection was unavailable), and tool-result percentages read only the projection because a measure-only reading cannot supply a window.
+- Read the optional pressure line from the already-driven session projection (`cachedSnapshot`) instead of materializing every projection unit on each prompt assembly; fall back to the exact snapshot when the cell is absent or trailing.
+- Cache `compact_context` visibility per agent and invalidate it on `tools/change`, so optional prompt callbacks no longer rebuild the tool registry view every model step.
+
 ## 0.4.1
 
 - Install the experimental PTC timeout wrapper only when `ptcTimeoutMs` or `ptcModelTimeouts` is configured, and skip route lookup for global-only defaults.

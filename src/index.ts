@@ -18,6 +18,7 @@
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction';
 import type { Context } from '@deepseek-ai/cordis';
+import type { Session } from '@deepseek-ai/dsh-session';
 import type {} from '@deepseek-ai/dsh-token-meter';
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools';
 import { Config, validateConfig } from './config.js';
@@ -230,7 +231,9 @@ async function attemptNativeRetention(input: {
   const session = agent.session;
   let policy;
   try {
-    policy = await readPolicy(ctx, session, agent, readPressure(ctx, session), signal);
+    // Only the window is consumed here; the token-meter fallback cannot
+    // supply one, so never pay its O(surface) scan for this read.
+    policy = await readPolicy(ctx, session, agent, readPressure(ctx, session, { measure: false }), signal);
   } catch (error) {
     return { kind: 'failed', reason: `could not read the native retention policy: ${errorMessage(error)}` };
   }
@@ -307,6 +310,15 @@ async function runAttempts(
   }
 }
 
+/**
+ * Quantized occupancy for a tool result. `pressurePercent` needs a window, and
+ * the token-meter measure fallback never supplies one, so this read skips that
+ * O(surface) scan instead of paying for a value that can never be displayed.
+ */
+function contextPercentFor(ctx: Context, session: Session, step: number): number | undefined {
+  return pressurePercent(readPressure(ctx, session, { measure: false }), step);
+}
+
 /** Render the compact tool's result. */
 function renderCompactResult(value: CompactResult): string {
   if (value.ok !== true) {
@@ -364,12 +376,12 @@ function compactTool(ctx: Context, config: ResolvedConfig): ToolDefinition {
       }
       if (outcome.kind === 'failed') return failed(outcome.reason);
       if (outcome.kind === 'empty') {
-        const percent = pressurePercent(readPressure(ctx, agent.session), config.pressureStep);
+        const percent = contextPercentFor(ctx, agent.session, config.pressureStep);
         const detail = percent === undefined ? '' : ` Current estimated context use is ~${String(percent)}%.`;
         return failed(`neither the native pressure policy nor the native retained-tail selector produced a safe compaction: pressure may be below the threshold with no compactable history, or a single retained unit may be too large.${detail} Continue the task; automatic compaction remains governed by the deployment's compaction config.`);
       }
 
-      const percent = pressurePercent(readPressure(ctx, agent.session), config.pressureStep);
+      const percent = contextPercentFor(ctx, agent.session, config.pressureStep);
       const result = outcome.result;
       const compactedItems = Array.isArray(result.shadowedSeqs) ? result.shadowedSeqs.length : 0;
       const freedTokens = Number.isFinite(result.shadowedTokenCount) ? Math.max(0, Math.round(result.shadowedTokenCount)) : 0;
@@ -458,14 +470,30 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
   validateConfig(config);
   installPtcTimeoutOverride(ctx, config);
 
-  /** Whether this agent can actually see one tool. */
-  const visible = (toolName: string, agent: Agent | undefined): boolean => {
+  // `tools.get()` rebuilds the whole per-scope view (layers, restrictions,
+  // inherited maps). Prompt callbacks run every model step, so cache the one
+  // name they ask about and drop the cache whenever the registry changes.
+  let compactVisibility = new WeakMap<Agent, boolean>();
+  // A minimal composition may expose the registry without the event face.
+  if (typeof ctx.on === 'function') {
+    ctx.on('tools/change', () => {
+      compactVisibility = new WeakMap();
+    });
+  }
+
+  /** Whether this agent can actually see compact_context. */
+  const compactVisible = (agent: Agent | undefined): boolean => {
     if (agent === undefined || agent === null) return true;
+    const cached = compactVisibility.get(agent);
+    if (cached !== undefined) return cached;
+    let result: boolean;
     try {
-      return ctx.tools.get(toolName, agent) !== undefined;
+      result = ctx.tools.get(COMPACT_TOOL, agent) !== undefined;
     } catch {
-      return true;
+      result = true;
     }
+    compactVisibility.set(agent, result);
+    return result;
   };
 
   if (config.compactTool && config.guidance) {
@@ -474,7 +502,7 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
       name: 'tool-compact-context:guidance',
       order: SECTION_ORDER,
       interpolate: false,
-      text: (context) => (visible(COMPACT_TOOL, context.agent) ? policyText : ''),
+      text: (context) => (compactVisible(context.agent) ? policyText : ''),
     });
   }
 
@@ -486,8 +514,8 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
       text: (context) => {
         const agent = context.agent;
         if (agent === undefined || agent === null) return '';
-        if (config.compactTool && !visible(COMPACT_TOOL, agent)) return '';
-        return pressureText(readPressure(ctx, agent.session, { measure: false }), {
+        if (config.compactTool && !compactVisible(agent)) return '';
+        return pressureText(readPressure(ctx, agent.session, { measure: false, cached: true }), {
           notifyAtRatio: config.notifyAtRatio,
           pressureStep: config.pressureStep,
         }, config.compactTool);

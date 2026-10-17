@@ -21,9 +21,17 @@ export interface BreakdownReading {
  * empty reading rather than breaking prompt assembly. The optional pressure
  * line passes `measure: false` so a hidden line never pays an O(surface) scan
  * on every prompt assembly.
+ *
+ * With `cached`, prefer the registry's already-driven client view when it has
+ * consumed the whole log, and materialize history only when the cell is absent
+ * or trailing. Prompt assembly uses it because that line is a hint; exact tool
+ * readings keep the snapshot path. The registry drives cells synchronously
+ * from `session/event`, so a current cell costs a few map reads instead of a
+ * full materialization pass over every projection unit.
  */
 export declare function readPressure(ctx: Context, session: Session, options?: {
     readonly measure?: boolean;
+    readonly cached?: boolean;
 }): PressureReading;
 /**
  * Read the heuristic system/tools/messages composition, when the composition

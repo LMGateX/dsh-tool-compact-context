@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-compact-context",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Model-facing trigger for native context compaction and read-only context status for DeepSeek Harness",
   "repository": {
     "type": "git",

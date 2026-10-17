@@ -27,17 +27,16 @@ From GitHub (includes built `lib` and `client` artifacts):
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.1
+pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.2
 ```
 
 Then add `dsh-tool-compact-context` after `@deepseek-ai/dsh-base` in `dsh.profile.bundles`, or add the insert entry from [cordis.patch.yml](cordis.patch.yml) to the profile patch. Restart the profile when hot reload is unavailable.
 
 ## Compatibility
 
-- Tested against DSH **0.2.1-rc.1** at runtime: 31/31 tests and TypeScript checks pass.
-- **0.2.1-rc.2** release notes only cover DeepSeek-V4.1-Flash and Search/Fetch; the rc.1→rc.2 source diff for compaction, tools, PTC runtime and settings/plugin-manager packages is package-version-only, with no API changes.
+- Tested against DSH **0.2.1-rc.2** at runtime: 48/48 tests and TypeScript checks pass.
+- The rc.1→rc.2 source diff for compaction, tools, PTC runtime and settings/plugin-manager packages is package-version-only, with no API changes.
 - `engines.dsh`: `>=0.2.1-alpha.4 <0.3.0`.
-- At the time of the rc.2 check its npm packages were not published yet, so the rc.2 conclusion is source-diff based.
 
 ## Development
 

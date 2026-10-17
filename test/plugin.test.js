@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import { apply, Config, inject, name } from '../lib/index.js';
 import { buildConversation } from './helpers.js';
 
+/** Count full-surface measurements made through one harness. */
+function countMeasures(harness) {
+  const original = harness.ctx.tokenMeter.measure;
+  const counter = { count: 0 };
+  harness.ctx.tokenMeter.measure = (session) => {
+    counter.count += 1;
+    return original.call(harness.ctx.tokenMeter, session);
+  };
+  return counter;
+}
+
 function makeHarness({
   projected = 800,
   window = 1000,
@@ -32,8 +43,17 @@ function makeHarness({
   let compactionCount = 0;
   let current = { projected, window };
   let hidden = false;
+  const listeners = new Map();
 
   const ctx = {
+    on(event, listener) {
+      const list = listeners.get(event) ?? [];
+      list.push(listener);
+      listeners.set(event, list);
+    },
+    emit(event) {
+      for (const listener of listeners.get(event) ?? []) listener();
+    },
     tools: {
       register(definition) {
         tools.set(definition.name, definition);
@@ -43,6 +63,7 @@ function makeHarness({
       },
       hide() {
         hidden = true;
+        for (const listener of listeners.get('tools/change') ?? []) listener();
       },
     },
     compaction: {
@@ -281,6 +302,173 @@ test('falls back to the native retained-tail policy below the threshold', async 
   assert.equal(harness.calls[0].end, harness.session.surface.nodes[2]);
 });
 
+test('the retained-tail fallback measures the surface exactly once', async () => {
+  const harness = makeHarness({
+    policy: { thresholdRatio: 0.8, headroomTokens: 100, retainTokens: 500, auto: true, modelPolicies: [] },
+  });
+  harness.ctx.compaction.compactIfNeeded = async () => null;
+  harness.session.requestHeader = () => ({ config: { provider: 'test', model: 'test', maxTokens: 100 } });
+  // Force a projection miss: a stray readPressure would have to measure.
+  harness.ctx.get = () => undefined;
+  const counted = countMeasures(harness);
+  const result = await harness.tool().execute(
+    {},
+    {
+      agent: { session: harness.session, options: { provider: 'test', model: 'test' } },
+      signal: new AbortController().signal,
+    },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'retention');
+  assert.equal(counted.count, 1);
+});
+
+test('a native pressure compaction never measures just for the percentage', async () => {
+  const harness = makeHarness();
+  harness.ctx.get = () => undefined;
+  const counted = countMeasures(harness);
+  const result = await harness.tool().execute(
+    {},
+    { agent: { session: harness.session, options: {} }, signal: new AbortController().signal },
+  );
+  assert.equal(result.ok, true);
+  // A measure-only reading has no window, so pressurePercent cannot render.
+  assert.equal(result.contextPercent, undefined);
+  assert.equal(counted.count, 0);
+});
+
+test('the empty-retention outcome measures once and skips the percentage read', async () => {
+  const harness = makeHarness({
+    policy: { thresholdRatio: 0.8, headroomTokens: 100, retainTokens: 100000, auto: true, modelPolicies: [] },
+  });
+  harness.ctx.compaction.compactIfNeeded = async () => null;
+  harness.session.requestHeader = () => ({ config: { provider: 'test', model: 'test', maxTokens: 100 } });
+  harness.ctx.get = () => undefined;
+  const counted = countMeasures(harness);
+  const result = await harness.tool().execute(
+    {},
+    {
+      agent: { session: harness.session, options: { provider: 'test', model: 'test' } },
+      signal: new AbortController().signal,
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /neither the native pressure policy/);
+  assert.equal(counted.count, 1);
+});
+
+test('the status tool still measures when the projection is unavailable', async () => {
+  const harness = makeHarness();
+  harness.ctx.get = () => undefined;
+  const counted = countMeasures(harness);
+  const result = await harness.tool('context_status').execute(
+    { include_policy: false },
+    {
+      agent: { session: harness.session, options: { provider: 'test', model: 'test' } },
+      signal: new AbortController().signal,
+    },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.source, 'surface');
+  assert.equal(result.tokens, 800);
+  assert.equal(counted.count, 1);
+});
+
+test('the pressure line reads the already-driven projection instead of materializing', () => {
+  const harness = makeHarness({ projected: 800, window: 1000, pressureContext: true });
+  let cached = 0;
+  let snapshots = 0;
+  harness.ctx.get = (service) => (service === 'sessionProjections'
+    ? {
+        cachedSnapshot(session) {
+          cached += 1;
+          return { asOfSeq: session.seq - 1, values: { contextPressure: { projectedTokens: 800, contextWindow: 1000 } } };
+        },
+        snapshot() {
+          snapshots += 1;
+          return { values: {} };
+        },
+      }
+    : undefined);
+  const text = harness.contexts[0].text({ agent: { session: harness.session } });
+  assert.match(text, /~80% of the window/);
+  assert.equal(cached, 1);
+  assert.equal(snapshots, 0);
+});
+
+test('the pressure line re-materializes a trailing cached cell', () => {
+  const harness = makeHarness({ projected: 800, window: 1000, pressureContext: true });
+  let cached = 0;
+  let snapshots = 0;
+  harness.ctx.get = (service) => (service === 'sessionProjections'
+    ? {
+        cachedSnapshot(session) {
+          cached += 1;
+          return { asOfSeq: session.seq - 2, values: { contextPressure: { projectedTokens: 800, contextWindow: 1000 } } };
+        },
+        snapshot() {
+          snapshots += 1;
+          return { values: { contextPressure: { projectedTokens: 800, contextWindow: 1000 } } };
+        },
+      }
+    : undefined);
+  const text = harness.contexts[0].text({ agent: { session: harness.session } });
+  assert.match(text, /~80% of the window/);
+  assert.equal(cached, 1);
+  assert.equal(snapshots, 1);
+});
+
+test('the pressure line materializes once when no driven cell exists yet', () => {
+  const harness = makeHarness({ projected: 800, window: 1000, pressureContext: true });
+  let cached = 0;
+  let snapshots = 0;
+  harness.ctx.get = (service) => (service === 'sessionProjections'
+    ? {
+        cachedSnapshot() {
+          cached += 1;
+          return undefined;
+        },
+        snapshot() {
+          snapshots += 1;
+          return { values: { contextPressure: { projectedTokens: 800, contextWindow: 1000 } } };
+        },
+      }
+    : undefined);
+  const text = harness.contexts[0].text({ agent: { session: harness.session } });
+  assert.match(text, /~80% of the window/);
+  assert.equal(cached, 1);
+  assert.equal(snapshots, 1);
+});
+
+test('the status tool keeps the exact snapshot when a cached view also exists', async () => {
+  const harness = makeHarness({ projected: 80000, window: 200000 });
+  let cached = 0;
+  let snapshots = 0;
+  harness.ctx.get = (service) => (service === 'sessionProjections'
+    ? {
+        cachedSnapshot(session) {
+          cached += 1;
+          return { asOfSeq: session.seq - 1, values: { contextPressure: { projectedTokens: 200, contextWindow: 200000 } } };
+        },
+        snapshot() {
+          snapshots += 1;
+          return { values: { contextPressure: { projectedTokens: 80000, contextWindow: 200000 } } };
+        },
+      }
+    : undefined);
+  const result = await harness.tool('context_status').execute(
+    { include_policy: false },
+    {
+      agent: { session: harness.session, options: { provider: 'test', model: 'test' } },
+      signal: new AbortController().signal,
+    },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.tokens, 80000);
+  assert.equal(cached, 0);
+  assert.equal(snapshots, 1);
+});
+
 test('rejects arguments because the native policy owns selection', async () => {
   const harness = makeHarness();
   const exec = { agent: { session: harness.session, options: {} }, signal: new AbortController().signal };
@@ -486,6 +674,24 @@ test('hides its prompt contributions when the tool is restricted away', () => {
   harness.hide();
   assert.equal(harness.sections[0].text({ agent: {} }), '');
   assert.equal(harness.contexts[0].text({ agent: { session: harness.session } }), '');
+});
+
+test('caches compact_context visibility until the tool registry changes', () => {
+  const harness = makeHarness();
+  let reads = 0;
+  const originalGet = harness.ctx.tools.get;
+  harness.ctx.tools.get = (toolName) => {
+    reads += 1;
+    return originalGet.call(harness.ctx.tools, toolName);
+  };
+  const agent = {};
+  assert.match(harness.sections[0].text({ agent }), /Context management/);
+  assert.equal(reads, 1);
+  assert.match(harness.sections[0].text({ agent }), /Context management/);
+  assert.equal(reads, 1, 'a second assembly reuses the cached visibility');
+  harness.ctx.tools.hide();
+  assert.equal(harness.sections[0].text({ agent }), '');
+  assert.equal(reads, 2, 'tools/change invalidates the cache');
 });
 
 test('the status tool reads occupancy and the backend policy', async () => {

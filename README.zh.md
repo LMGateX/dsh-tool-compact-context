@@ -88,7 +88,7 @@ DSH 有意不把 token 预算注入给模型；这个插件默认也不注入策
 - `compact_context` 默认 **开**。
 - `context_status` 默认 **关**（按需开启）：它的 schema 和结果可能影响行为/历史。
 - `guidance` 默认 **关**：推荐把“何时压缩”写在 `AGENTS.md`；需要插件自带策略时再打开。
-- `pressureContext` 默认 **关**：实验性自动水位 line。它只读 token-meter 投影；投影尚未 materialize 时不显示，避免在每次 prompt assembly 里做 O(surface) 全量测量。
+- `pressureContext` 默认 **关**：实验性自动水位 line。它优先读取 token-meter 已驱动的投影 cell；cell 缺失或落后时才精确 materialize 一次，避免在每次 prompt assembly 里做 O(surface) 全量测量。prompt 回调还会按 agent 缓存 `compact_context` 可见性，并在 `tools/change` 时失效。
 
 缓存语义：
 
@@ -102,9 +102,9 @@ DSH 有意不把 token 预算注入给模型；这个插件默认也不注入策
 
 ### 版本兼容性
 
-- 已在 **DSH 0.2.1-rc.1** 上运行完整测试（31/31）并通过 TypeScript 类型检查。
-- **DSH 0.2.1-rc.2** 的 release notes 只包含 DeepSeek-V4.1-Flash 与 Search/Fetch 适配；对 rc.1→rc.2 的源码对比显示，压缩、tools、PTC runtime、settings/plugin-manager 相关包只有版本号变更，没有本插件使用的 API 变更。
-- 检查时 rc.2 的 npm 包尚未发布（`0.2.1-rc.2` 返回 404），因此无法在 rc.2 二进制上重复运行时测试；rc.1 的测试与类型检查仍然有效。
+- 已在 **DSH 0.2.1-rc.2** 上运行完整测试（48/48）并通过 TypeScript 类型检查。
+- 对 rc.1→rc.2 的源码对比显示，压缩、tools、PTC runtime、settings/plugin-manager 相关包只有版本号变更，没有本插件使用的 API 变更。
+- rc.2 的 npm 包现已在本地安装；插件测试直接使用该版本运行。
 - `package.json` 声明 `engines.dsh: ">=0.2.1-alpha.4 <0.3.0"`，覆盖 alpha.4、rc.1、rc.2 与 0.2.1 stable；`@deepseek-ai/schemastery` 使用 `~3.18.4`，与 rc.1/rc.2 的 `~3.18.5` 兼容。
 - 0.2.1 系列的相关 seam（`compactIfNeeded`、`compactRegion`、`PtcRuntime.resolve`、`configForms`/`plugins.row.config`）与 alpha.4 的类型声明一致；本插件没有依赖被移除的 mixed tool-presentation 模式或 invariant 导出。
 
@@ -126,7 +126,7 @@ pnpm run build
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.1
+pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.2
 ```
 
 也可以 clone 后本地安装：
@@ -303,4 +303,5 @@ pnpm test            # node --test test/*.test.js
 - 客户端：classic script 无 ESM、`plugins.row.config` key/inject/注册形状、四个默认开关、超时字段秒显示/换算、策略与按模型 textarea。
 - PTC 默认预算：全局/按模型匹配、runtime max 截断、显式 `timeoutMs` 优先。
 - 真实 `Session` + 真实 `BasicCompactionEngine`（stub summarizer）：达到阈值走 `compactIfNeeded('pressure')`；低于阈值走 native retention + `compactRegion`；确认真实事务与 checkpoint。
-- 共 31 个测试通过。
+- 性能回归：压缩路径只测量一次、成功/空结果不再为无法显示的百分比测量、状态工具仍保留一次精确测量、水位行使用已驱动投影并在落后时回退、工具可见性缓存随 `tools/change` 失效。
+- 共 48 个测试通过。
