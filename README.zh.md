@@ -88,7 +88,7 @@ DSH 有意不把 token 预算注入给模型；这个插件默认也不注入策
 - `compact_context` 默认 **开**。
 - `context_status` 默认 **关**（按需开启）：它的 schema 和结果可能影响行为/历史。
 - `guidance` 默认 **关**：推荐把“何时压缩”写在 `AGENTS.md`；需要插件自带策略时再打开。
-- `pressureContext` 默认 **关**：实验性自动水位 line。
+- `pressureContext` 默认 **关**：实验性自动水位 line。它只读 token-meter 投影；投影尚未 materialize 时不显示，避免在每次 prompt assembly 里做 O(surface) 全量测量。
 
 缓存语义：
 
@@ -126,7 +126,7 @@ pnpm run build
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.0
+pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.1
 ```
 
 也可以 clone 后本地安装：

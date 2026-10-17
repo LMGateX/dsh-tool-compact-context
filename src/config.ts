@@ -15,7 +15,7 @@ export const Config: z<ResolvedConfig> = z.object({
   guidanceText: z.string().default('')
     .description('Custom policy text for the guidance section. Empty uses the built-in default. Only used when guidance is true; capped at 8000 characters.'),
   pressureContext: z.boolean().default(false)
-    .description('Experimental: append a quantized context-pressure line as runtime context. Off by default because it adds unrequested content and history.'),
+    .description('Experimental: append a quantized context-pressure line as runtime context from the token-meter projection. Off by default because it adds unrequested content and history.'),
   notifyAtRatio: z.number().default(0.25)
     .description('Window fraction at which the optional pressure line appears.'),
   pressureStep: z.number().default(10)

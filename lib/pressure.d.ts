@@ -18,9 +18,13 @@ export interface BreakdownReading {
  * Read the newest next-request prompt estimate and route capacity.
  * Prefers the token meter's projection (O(1), provider-anchored), falls back
  * to a full measurement when projections are unavailable, and degrades to an
- * empty reading rather than breaking prompt assembly.
+ * empty reading rather than breaking prompt assembly. The optional pressure
+ * line passes `measure: false` so a hidden line never pays an O(surface) scan
+ * on every prompt assembly.
  */
-export declare function readPressure(ctx: Context, session: Session): PressureReading;
+export declare function readPressure(ctx: Context, session: Session, options?: {
+    readonly measure?: boolean;
+}): PressureReading;
 /**
  * Read the heuristic system/tools/messages composition, when the composition
  * registers that projection. This is an estimate, not a billing record.

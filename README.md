@@ -27,7 +27,7 @@ From GitHub (includes built `lib` and `client` artifacts):
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.0
+pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.1
 ```
 
 Then add `dsh-tool-compact-context` after `@deepseek-ai/dsh-base` in `dsh.profile.bundles`, or add the insert entry from [cordis.patch.yml](cordis.patch.yml) to the profile patch. Restart the profile when hot reload is unavailable.

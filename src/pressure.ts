@@ -41,9 +41,15 @@ interface ProjectionReader {
  * Read the newest next-request prompt estimate and route capacity.
  * Prefers the token meter's projection (O(1), provider-anchored), falls back
  * to a full measurement when projections are unavailable, and degrades to an
- * empty reading rather than breaking prompt assembly.
+ * empty reading rather than breaking prompt assembly. The optional pressure
+ * line passes `measure: false` so a hidden line never pays an O(surface) scan
+ * on every prompt assembly.
  */
-export function readPressure(ctx: Context, session: Session): PressureReading {
+export function readPressure(
+  ctx: Context,
+  session: Session,
+  options: { readonly measure?: boolean } = {},
+): PressureReading {
   const projections = ctx.get('sessionProjections') as ProjectionReader | undefined;
   if (projections !== undefined && projections !== null) {
     try {
@@ -61,6 +67,7 @@ export function readPressure(ctx: Context, session: Session): PressureReading {
       // The projection may not be registered or materialized yet; measure instead.
     }
   }
+  if (options.measure === false) return { source: 'unknown' };
   try {
     const measured = ctx.tokenMeter.measure(session);
     const tokens = typeof measured?.surfaceTokens === 'number' ? measured.surfaceTokens : measured?.totalTokens;

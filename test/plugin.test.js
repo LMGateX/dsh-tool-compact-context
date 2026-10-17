@@ -28,6 +28,7 @@ function makeHarness({
       return { ...request, timeoutMs: request.timeoutMs === undefined ? 120000 : request.timeoutMs };
     },
   };
+  const originalResolve = ptcRuntime.resolve;
   let compactionCount = 0;
   let current = { projected, window };
   let hidden = false;
@@ -119,6 +120,7 @@ function makeHarness({
     session,
     ctx,
     ptcRuntime,
+    originalResolve,
     sections,
     contexts,
     calls,
@@ -163,6 +165,17 @@ test('uses a configured PTC default when run_code omits timeoutMs', () => {
   assert.equal(spec.timeoutMs, 300000);
 });
 
+test('uses a per-model PTC default without a global default', () => {
+  const harness = makeHarness({ ptcModelTimeouts: { 'slow/m': 300000 } });
+  harness.session.requestHeader = () => ({ config: { provider: 'slow', model: 'm', maxTokens: 1000 } });
+  const spec = harness.ptcRuntime.resolve({
+    program: '',
+    bindings: [],
+    stateOwner: { session: harness.session, options: {} },
+  });
+  assert.equal(spec.timeoutMs, 300000);
+});
+
 test('uses and caps a per-model PTC default', () => {
   const harness = makeHarness({
     ptcTimeoutMs: 300000,
@@ -181,6 +194,22 @@ test('respects an explicit run_code timeout', () => {
   const harness = makeHarness({ ptcTimeoutMs: 300000 });
   const spec = harness.ptcRuntime.resolve({ program: '', bindings: [], timeoutMs: 1000 });
   assert.equal(spec.timeoutMs, 1000);
+});
+
+test('does not wrap the PTC runtime without PTC defaults', () => {
+  const harness = makeHarness();
+  assert.equal(harness.ptcRuntime.resolve, harness.originalResolve);
+});
+
+test('does not read the route for a global-only PTC default', () => {
+  const harness = makeHarness({ ptcTimeoutMs: 300000 });
+  let headerReads = 0;
+  harness.session.requestHeader = () => {
+    headerReads += 1;
+    return { config: { provider: 'slow', model: 'm', maxTokens: 1000 } };
+  };
+  harness.ptcRuntime.resolve({ program: '', bindings: [] });
+  assert.equal(headerReads, 0);
 });
 
 test('uses custom guidance text when provided', () => {
@@ -289,12 +318,69 @@ test('retries a transient model failure with backoff', async () => {
   assert.equal(attempts, 2);
 });
 
+test('retries a request-timeout status', async () => {
+  const harness = makeHarness();
+  let attempts = 0;
+  harness.ctx.compaction.compactIfNeeded = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error('upstream timed out');
+      error.status = 408;
+      throw error;
+    }
+    return { shadowedSeqs: [1], shadowedTokenCount: 10 };
+  };
+  const result = await harness.tool().execute(
+    {},
+    { agent: { session: harness.session, options: {} }, signal: new AbortController().signal },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(attempts, 2);
+});
+
+test('retries once when the native error is classified as changed', async () => {
+  const harness = makeHarness();
+  let attempts = 0;
+  harness.ctx.compaction.compactIfNeeded = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error('manual compaction changed');
+      error.code = 'changed';
+      throw error;
+    }
+    return { shadowedSeqs: [1], shadowedTokenCount: 10 };
+  };
+  const result = await harness.tool().execute(
+    {},
+    { agent: { session: harness.session, options: {} }, signal: new AbortController().signal },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(attempts, 2);
+});
+
 test('does not retry a deterministic oversized-summary failure', async () => {
   const harness = makeHarness();
   let attempts = 0;
   harness.ctx.compaction.compactIfNeeded = async () => {
     attempts += 1;
     throw new Error('summary is not smaller than the shadowed content');
+  };
+  const result = await harness.tool().execute(
+    {},
+    { agent: { session: harness.session, options: {} }, signal: new AbortController().signal },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(attempts, 1);
+});
+
+test('does not retry a deterministic max-tokens summary', async () => {
+  const harness = makeHarness();
+  let attempts = 0;
+  harness.ctx.compaction.compactIfNeeded = async () => {
+    attempts += 1;
+    const error = new Error('summarization truncated at the token cap (incomplete checkpoint)');
+    error.code = 'MAX_TOKENS';
+    throw error;
   };
   const result = await harness.tool().execute(
     {},
@@ -378,6 +464,21 @@ test('injects a quantized pressure line only above the floor', () => {
   const low = makeHarness({ projected: 200, window: 1000, pressureContext: true });
   assert.equal(low.contexts[0].text({ agent: { session: low.session } }), '');
   assert.equal(harness.contexts[0].text({}), '');
+});
+
+test('the optional pressure line does not measure the whole surface when projection is empty', () => {
+  const harness = makeHarness({ pressureContext: true });
+  let measured = 0;
+  harness.ctx.get = (service) => (service === 'sessionProjections'
+    ? { snapshot() { return { values: {} }; } }
+    : undefined);
+  harness.ctx.tokenMeter.measure = () => {
+    measured += 1;
+    return { surfaceTokens: 1 };
+  };
+  const text = harness.contexts[0].text({ agent: { session: harness.session } });
+  assert.equal(text, '');
+  assert.equal(measured, 0);
 });
 
 test('hides its prompt contributions when the tool is restricted away', () => {

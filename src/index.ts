@@ -68,6 +68,7 @@ function errorMessage(error: unknown): string {
 function isSurfaceChanged(error: unknown): boolean {
   if (error === null || typeof error !== 'object') return false;
   if ((error as { name?: string }).name === 'SurfaceChangedError') return true;
+  if ((error as { code?: unknown }).code === 'changed') return true;
   const message = errorMessage(error);
   return message.includes('surface changed')
     || message.includes('selected span changed')
@@ -75,9 +76,26 @@ function isSurfaceChanged(error: unknown): boolean {
 }
 
 /** Deterministic failures where another attempt cannot help. */
-function isDeterministicFailure(message: string): boolean {
-  const lower = message.toLowerCase();
+function isDeterministicFailure(error: unknown): boolean {
+  const code = error !== null && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  if (typeof code === 'string') {
+    if (code === 'MAX_TOKENS'
+      || code === 'UNSUPPORTED_CONTENT'
+      || code === 'INVALID_MODEL_INFO'
+      || code === 'INVALID_MODEL_CONTEXT'
+      || code === 'INVALID_MODEL_MAX_TOKENS'
+      || code === 'INVALID_MODEL_REASONING'
+      || code === 'commit'
+      || code === 'persistence') {
+      return true;
+    }
+  }
+  const lower = errorMessage(error).toLowerCase();
   return lower.includes('not smaller than the shadowed content')
+    || lower.includes('summarization truncated at the token cap')
+    || lower.includes('cannot contain image output')
+    || lower.includes('durability checkpoint failed')
+    || lower.includes('did not commit cleanly')
     || lower.includes('no open turn')
     || lower.includes('not a balanced boundary')
     || lower.includes('no provider/model available')
@@ -111,8 +129,15 @@ function isRetryableFailure(error: unknown, signal: AbortSignal): boolean {
     : typeof record.statusCode === 'number' ? record.statusCode
       : typeof record.response?.status === 'number' ? record.response.status
         : undefined;
-  if (status !== undefined && status !== 429 && status < 500) return false;
-  return !isDeterministicFailure(errorMessage(error));
+  if (status !== undefined
+    && status !== 0
+    && status !== 408
+    && status !== 425
+    && status !== 429
+    && status < 500) {
+    return false;
+  }
+  return !isDeterministicFailure(error);
 }
 
 /** Abortable backoff between transient-failure retries. */
@@ -462,7 +487,7 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
         const agent = context.agent;
         if (agent === undefined || agent === null) return '';
         if (config.compactTool && !visible(COMPACT_TOOL, agent)) return '';
-        return pressureText(readPressure(ctx, agent.session), {
+        return pressureText(readPressure(ctx, agent.session, { measure: false }), {
           notifyAtRatio: config.notifyAtRatio,
           pressureStep: config.pressureStep,
         }, config.compactTool);

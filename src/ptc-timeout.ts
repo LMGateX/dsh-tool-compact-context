@@ -44,7 +44,8 @@ function routeOf(owner: object | undefined): { provider: string; model: string }
  * The wrapper is installed only when configured and is restored on disposal.
  */
 export function installPtcTimeoutOverride(ctx: Context, config: ResolvedConfig): void {
-  if (config.ptcTimeoutMs <= 0 && config.ptcModelTimeouts.length === 0) return;
+  const hasModelTimeouts = Object.keys(config.ptcModelTimeouts).length > 0;
+  if (config.ptcTimeoutMs <= 0 && !hasModelTimeouts) return;
   const context = ctx as unknown as {
     ptcRuntime?: PtcRuntimeLike;
     get?: (name: string) => unknown;
@@ -59,8 +60,11 @@ export function installPtcTimeoutOverride(ctx: Context, config: ResolvedConfig):
   const original = runtime.resolve;
   const choose = (request: PtcRunRequestLike): number | undefined => {
     if (request.timeoutMs !== undefined) return undefined;
-    const route = routeOf(request.stateOwner);
-    const exact = route === undefined ? undefined : config.ptcModelTimeouts[`${route.provider}/${route.model}`];
+    let exact: number | undefined;
+    if (hasModelTimeouts) {
+      const route = routeOf(request.stateOwner);
+      if (route !== undefined) exact = config.ptcModelTimeouts[`${route.provider}/${route.model}`];
+    }
     const desired = exact ?? config.ptcTimeoutMs;
     if (desired <= 0) return undefined;
     const max = runtime.timeout?.maxMs;
