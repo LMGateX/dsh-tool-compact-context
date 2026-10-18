@@ -41,6 +41,13 @@ test('the client script registers a settings row and no ESM surface', () => {
 });
 
 
+test('the settings form uses theme surface tokens', () => {
+  assert.doesNotMatch(source, /--dsw-alias-bg-primary/);
+  assert.doesNotMatch(source, /--dsw-alias-border-secondary/);
+  assert.match(source, /--dsw-alias-bg-layer-3/);
+  assert.match(source, /--dsw-alias-border-l4/);
+});
+
 test('the settings form renders the four effective defaults', () => {
   let entry;
   let cursor = 0;

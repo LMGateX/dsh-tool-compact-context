@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4
+
+- Fix the Web settings form's dark-theme contrast. The form used `--dsw-alias-bg-primary` / `--dsw-alias-border-secondary`, which this DSH build does not define, so inputs and buttons fell back to white while the primary text stayed white. They now use the shell's real layer/border tokens (`--dsw-alias-bg-layer-3`, `--dsw-alias-border-l4`, `--dsw-radius-md`), and the checkboxes use the native accent color.
+- No behavior or configuration changes; this is a client-only visual fix.
+
 ## 0.4.3
 
 - Fix the Web settings form never appearing on DSH 0.2.1-rc.2: mark the fields the form edits as volatile so the settings service generates the row's configuration namespace. Previously the client form was implemented but its host schema was not volatile, so the plugin manager had no configuration entry to show.
