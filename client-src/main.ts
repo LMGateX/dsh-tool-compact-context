@@ -397,11 +397,28 @@ interface SwitchSpec {
     function apply(ctx: any): void {
       const form = ctx.configForms.get(ROW_ID);
       if (form === undefined) return;
-      ctx.effect(() => ctx.configForms.whileServed?.([ROW_ID], () => ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
-        name: 'plugins.row.config',
-        key: BUNDLE_ID + '#' + ROW_ID,
-        inject: () => ({ configForm: form }),
-      }, ConfigView))), 'dsh-tool-compact-context: settings');
+      ctx.effect(() => ctx.configForms.whileServed?.([ROW_ID], () => {
+        const dispose = (value: unknown): void => {
+          if (typeof value === 'function') value();
+        };
+        const row = ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+          name: 'plugins.row.config',
+          key: BUNDLE_ID + '#' + ROW_ID,
+          inject: () => ({ configForm: form }),
+        }, ConfigView));
+        // The bundle has one row, so show the same form on the package page
+        // too; otherwise the configuration is only reachable from the row
+        // detail behind the component's chevron.
+        const bundle = ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+          name: 'plugins.bundle.config',
+          key: BUNDLE_ID,
+          inject: () => ({ configForm: form }),
+        }, ConfigView));
+        return () => {
+          dispose(row);
+          dispose(bundle);
+        };
+      }), 'dsh-tool-compact-context: settings');
     }
 
     const exported: any = {};

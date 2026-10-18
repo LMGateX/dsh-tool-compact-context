@@ -21,7 +21,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { Session } from '@deepseek-ai/dsh-session';
 import type {} from '@deepseek-ai/dsh-token-meter';
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools';
-import { Config, validateConfig } from './config.js';
+import { Config, resolveConfig, validateConfig } from './config.js';
 import type { ResolvedConfig } from './config.js';
 import { COMPACT_TOOL, GUIDANCE, STATUS_TOOL, compactDescription, statusDescription } from './guidance.js';
 import { pressurePercent, pressureText, readPressure } from './pressure.js';
@@ -37,7 +37,7 @@ export const name = 'dsh-tool-compact-context';
 /** Services the tools cannot work without. */
 export const inject = ['tools', 'compaction', 'tokenMeter', 'systemPrompt', 'llm'];
 
-export { Config };
+export { Config, resolveConfig };
 
 /** Prompt placement: after the PTC-only instruction (800), before tool guidance (900). */
 const SECTION_ORDER = 850;
@@ -463,23 +463,26 @@ function statusTool(ctx: Context): ToolDefinition {
 
 /**
  * Register the optional prompt contributions and the enabled tools.
+ *
+ * The Web form fields are volatile, so the loader hands them over as accessors
+ * and emits `loader/volatile-update` for a live write. Resolve them to plain
+ * values, build one disposable layout, and rebuild that layout when a setting
+ * changes so the switches apply without a profile restart.
+ *
  * @param ctx plugin context
- * @param config resolved row config
+ * @param rawConfig loader-resolved row config (plain values or volatile accessors)
  */
-export function apply(ctx: Context, config: ResolvedConfig): void {
+export function apply(ctx: Context, rawConfig: Record<string, unknown> = {}): void {
+  const config = resolveConfig(rawConfig);
   validateConfig(config);
-  installPtcTimeoutOverride(ctx, config);
 
   // `tools.get()` rebuilds the whole per-scope view (layers, restrictions,
   // inherited maps). Prompt callbacks run every model step, so cache the one
   // name they ask about and drop the cache whenever the registry changes.
   let compactVisibility = new WeakMap<Agent, boolean>();
-  // A minimal composition may expose the registry without the event face.
-  if (typeof ctx.on === 'function') {
-    ctx.on('tools/change', () => {
-      compactVisibility = new WeakMap();
-    });
-  }
+  const resetVisibility = (): void => {
+    compactVisibility = new WeakMap();
+  };
 
   /** Whether this agent can actually see compact_context. */
   const compactVisible = (agent: Agent | undefined): boolean => {
@@ -496,33 +499,75 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
     return result;
   };
 
-  if (config.compactTool && config.guidance) {
-    const policyText = config.guidanceText.trim() === '' ? GUIDANCE : config.guidanceText;
-    ctx.systemPrompt.section({
-      name: 'tool-compact-context:guidance',
-      order: SECTION_ORDER,
-      interpolate: false,
-      text: (context) => (compactVisible(context.agent) ? policyText : ''),
+  let layout: Array<() => void> = [];
+  let restorePtc: (() => void) | undefined;
+
+  const teardown = (): void => {
+    for (const dispose of layout.splice(0).reverse()) dispose();
+    restorePtc?.();
+    restorePtc = undefined;
+    resetVisibility();
+  };
+
+  const register = (disposer: unknown): void => {
+    if (typeof disposer === 'function') layout.push(disposer as () => void);
+  };
+
+  const build = (next: ResolvedConfig): void => {
+    teardown();
+    restorePtc = installPtcTimeoutOverride(ctx, next);
+    if (next.compactTool && next.guidance) {
+      const policyText = next.guidanceText.trim() === '' ? GUIDANCE : next.guidanceText;
+      register(ctx.systemPrompt.section({
+        name: 'tool-compact-context:guidance',
+        order: SECTION_ORDER,
+        interpolate: false,
+        text: (context) => (compactVisible(context.agent) ? policyText : ''),
+      }));
+    }
+    if (next.pressureContext && next.compactTool) {
+      register(ctx.systemPrompt.context({
+        name: 'tool-compact-context:pressure',
+        order: CONTEXT_ORDER,
+        interpolate: false,
+        text: (context) => {
+          const agent = context.agent;
+          if (agent === undefined || agent === null) return '';
+          if (next.compactTool && !compactVisible(agent)) return '';
+          return pressureText(readPressure(ctx, agent.session, { measure: false, cached: true }), {
+            notifyAtRatio: next.notifyAtRatio,
+            pressureStep: next.pressureStep,
+          }, next.compactTool);
+        },
+      }));
+    }
+    if (next.compactTool) register(ctx.tools.register(compactTool(ctx, next)));
+    if (next.statusTool) register(ctx.tools.register(statusTool(ctx)));
+  };
+
+  // A minimal composition may expose the registry without the event face.
+  if (typeof ctx.on === 'function') {
+    // `loader/volatile-update` is a loader event, not part of this package's
+    // typed event surface.
+    const on = ctx.on as unknown as (event: string, listener: () => void) => void;
+    on('tools/change', resetVisibility);
+    on('loader/volatile-update', () => {
+      let next: ResolvedConfig;
+      try {
+        next = resolveConfig(rawConfig);
+        validateConfig(next);
+      } catch {
+        // Keep the last accepted layout; a rejected write must not take the
+        // model-facing tools offline.
+        return;
+      }
+      build(next);
     });
   }
 
-  if (config.pressureContext && config.compactTool) {
-    ctx.systemPrompt.context({
-      name: 'tool-compact-context:pressure',
-      order: CONTEXT_ORDER,
-      interpolate: false,
-      text: (context) => {
-        const agent = context.agent;
-        if (agent === undefined || agent === null) return '';
-        if (config.compactTool && !compactVisible(agent)) return '';
-        return pressureText(readPressure(ctx, agent.session, { measure: false, cached: true }), {
-          notifyAtRatio: config.notifyAtRatio,
-          pressureStep: config.pressureStep,
-        }, config.compactTool);
-      },
-    });
-  }
+  build(config);
 
-  if (config.compactTool) ctx.tools.register(compactTool(ctx, config));
-  if (config.statusTool) ctx.tools.register(statusTool(ctx));
+  if (typeof ctx.effect === 'function') {
+    ctx.effect(() => () => teardown(), 'dsh-tool-compact-context: settings layout');
+  }
 }

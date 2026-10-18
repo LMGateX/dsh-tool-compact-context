@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, Config, inject, name } from '../lib/index.js';
+import { apply, Config, inject, name, resolveConfig } from '../lib/index.js';
 import { buildConversation } from './helpers.js';
 
 /** Count full-surface measurements made through one harness. */
@@ -26,6 +26,7 @@ function makeHarness({
   retryDelayMs = 0,
   ptcTimeoutMs = 0,
   ptcModelTimeouts = {},
+  mutable = false,
   policy = { thresholdRatio: 0.8, headroomTokens: 65536, retainRatio: 0.16, auto: true, modelPolicies: [] },
 } = {}) {
   const session = buildConversation();
@@ -57,6 +58,9 @@ function makeHarness({
     tools: {
       register(definition) {
         tools.set(definition.name, definition);
+        return () => {
+          if (tools.get(definition.name) === definition) tools.delete(definition.name);
+        };
       },
       get(toolName) {
         return hidden ? undefined : tools.get(toolName);
@@ -93,9 +97,17 @@ function makeHarness({
     systemPrompt: {
       section(entry) {
         sections.push(entry);
+        return () => {
+          const index = sections.indexOf(entry);
+          if (index >= 0) sections.splice(index, 1);
+        };
       },
       context(entry) {
         contexts.push(entry);
+        return () => {
+          const index = contexts.indexOf(entry);
+          if (index >= 0) contexts.splice(index, 1);
+        };
       },
     },
     llm: {
@@ -126,17 +138,23 @@ function makeHarness({
     },
   };
 
-  apply(ctx, Config({
+  const state = {
     pressureContext,
     compactTool,
     statusTool,
     guidance,
     guidanceText,
+    notifyAtRatio: 0.25,
+    pressureStep: 10,
     retryAttempts,
     retryDelayMs,
     ptcTimeoutMs,
     ptcModelTimeouts,
-  }));
+  };
+  const rawConfig = mutable
+    ? Object.fromEntries(Object.entries(state).map(([key, value]) => [key, { get: () => state[key] }]))
+    : Config(state);
+  apply(ctx, rawConfig);
   return {
     session,
     ctx,
@@ -146,6 +164,8 @@ function makeHarness({
     contexts,
     calls,
     tools,
+    state,
+    rawConfig,
     tool(toolName = 'compact_context') {
       return tools.get(toolName);
     },
@@ -160,7 +180,7 @@ function makeHarness({
 
 test('registers the expected plugin surface', () => {
   assert.equal(name, 'dsh-tool-compact-context');
-  const defaults = Config({});
+  const defaults = resolveConfig(Config({}));
   assert.equal(defaults.compactTool, true);
   assert.equal(defaults.statusTool, false);
   assert.equal(defaults.guidance, false);
@@ -178,6 +198,45 @@ test('registers the expected plugin surface', () => {
   assert.match(harness.sections[0].text({}), /compact_context/);
   // The automatic pressure line is off by default.
   assert.equal(harness.contexts.length, 0);
+});
+
+test('marks the settings form fields volatile for the web form', () => {
+  const fields = [
+    'compactTool',
+    'statusTool',
+    'guidance',
+    'guidanceText',
+    'pressureContext',
+    'retryAttempts',
+    'retryDelayMs',
+    'ptcTimeoutMs',
+    'ptcModelTimeouts',
+  ];
+  for (const key of fields) {
+    assert.equal(Config.dict[key].meta.volatile, true, `${key} must be volatile`);
+  }
+  // These two are tuning knobs kept in the row YAML, not in the form.
+  assert.equal(Config.dict.notifyAtRatio.meta.volatile, undefined);
+  assert.equal(Config.dict.pressureStep.meta.volatile, undefined);
+});
+
+test('applies volatile settings changes without a restart', () => {
+  const harness = makeHarness({ compactTool: true, statusTool: false, guidance: false, mutable: true });
+  assert.ok(harness.tools.has('compact_context'));
+  assert.equal(harness.tools.has('context_status'), false);
+  assert.equal(harness.sections.length, 0);
+
+  harness.state.compactTool = false;
+  harness.ctx.emit('loader/volatile-update');
+  assert.equal(harness.tools.has('compact_context'), false);
+
+  harness.state.compactTool = true;
+  harness.state.statusTool = true;
+  harness.state.guidance = true;
+  harness.ctx.emit('loader/volatile-update');
+  assert.ok(harness.tools.has('compact_context'));
+  assert.ok(harness.tools.has('context_status'));
+  assert.equal(harness.sections.length, 1);
 });
 
 test('uses a configured PTC default when run_code omits timeoutMs', () => {

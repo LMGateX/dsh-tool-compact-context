@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3
+
+- Fix the Web settings form never appearing on DSH 0.2.1-rc.2: mark the fields the form edits as volatile so the settings service generates the row's configuration namespace. Previously the client form was implemented but its host schema was not volatile, so the plugin manager had no configuration entry to show.
+- Apply volatile settings changes live: the host unwraps loader accessors and rebuilds the tool/prompt layout on `loader/volatile-update`, so toggling a switch no longer needs a profile restart.
+- Keep the PTC timeout wrapper replaceable across live reconfiguration and restore it when the plugin unloads.
+
 ## 0.4.2
 
 - Skip redundant full-surface measurements on the compaction path: the retained-tail fallback measures once (it previously measured up to three times when the token-meter projection was unavailable), and tool-result percentages read only the projection because a measure-only reading cannot supply a window.

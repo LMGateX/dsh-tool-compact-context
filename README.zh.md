@@ -102,7 +102,7 @@ DSH 有意不把 token 预算注入给模型；这个插件默认也不注入策
 
 ### 版本兼容性
 
-- 已在 **DSH 0.2.1-rc.2** 上运行完整测试（48/48）并通过 TypeScript 类型检查。
+- 已在 **DSH 0.2.1-rc.2** 上运行完整测试（50/50）并通过 TypeScript 类型检查。
 - 对 rc.1→rc.2 的源码对比显示，压缩、tools、PTC runtime、settings/plugin-manager 相关包只有版本号变更，没有本插件使用的 API 变更。
 - rc.2 的 npm 包现已在本地安装；插件测试直接使用该版本运行。
 - `package.json` 声明 `engines.dsh: ">=0.2.1-alpha.4 <0.3.0"`，覆盖 alpha.4、rc.1、rc.2 与 0.2.1 stable；`@deepseek-ai/schemastery` 使用 `~3.18.4`，与 rc.1/rc.2 的 `~3.18.5` 兼容。
@@ -126,7 +126,7 @@ pnpm run build
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.2
+pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.3
 ```
 
 也可以 clone 后本地安装：
@@ -300,8 +300,9 @@ pnpm test            # node --test test/*.test.js
 
 - 插件入口：原生 `compactIfNeeded` 参数、pressure 成功、低于阈值 fallback、retain 不可用失败、瞬时失败退避重试/预算耗尽/确定性失败不重试、busy/surface-changed 重试、开关组合、自定义策略文本、水位 line、render。
 - 状态工具：占用/窗口/百分比、阈值/retain 复算、backend 不暴露 config 时 unknown。
-- 客户端：classic script 无 ESM、`plugins.row.config` key/inject/注册形状、四个默认开关、超时字段秒显示/换算、策略与按模型 textarea。
+- 客户端：classic script 无 ESM、`plugins.row.config` 与 `plugins.bundle.config` 双入口的 key/inject/注册形状、四个默认开关、超时字段秒显示/换算、策略与按模型 textarea。
+- 设置页：表单字段带 `meta.volatile`（DSH 仅据此生成 row settings namespace）；`loader/volatile-update` 后 host 重建工具/提示布局，开关无需重启。
 - PTC 默认预算：全局/按模型匹配、runtime max 截断、显式 `timeoutMs` 优先。
 - 真实 `Session` + 真实 `BasicCompactionEngine`（stub summarizer）：达到阈值走 `compactIfNeeded('pressure')`；低于阈值走 native retention + `compactRegion`；确认真实事务与 checkpoint。
 - 性能回归：压缩路径只测量一次、成功/空结果不再为无法显示的百分比测量、状态工具仍保留一次精确测量、水位行使用已驱动投影并在落后时回退、工具可见性缓存随 `tools/change` 失效。
-- 共 48 个测试通过。
+- 共 50 个测试通过。

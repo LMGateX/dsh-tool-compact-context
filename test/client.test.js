@@ -163,7 +163,7 @@ test('renders timeout and per-model values in seconds', () => {
   assert.equal(textareas[0].props.value, 'slow/model = 300');
 });
 
-test('the client form registers against the row config form', () => {
+test('the client form registers against the package and row config slots', () => {
   const { exported } = loadClient();
   const registrations = [];
   const form = {
@@ -190,12 +190,12 @@ test('the client form registers against the row config form', () => {
     },
     slots: {
       inject(name, register) {
-        assert.equal(name, 'plugins.row.config');
+        assert.ok(['plugins.row.config', 'plugins.bundle.config'].includes(name), name);
         return register();
       },
       register(definition, view) {
         registrations.push({ definition, view });
-        return definition;
+        return () => {};
       },
     },
     effect(run) {
@@ -203,9 +203,13 @@ test('the client form registers against the row config form', () => {
     },
   };
   exported.apply(ctx);
-  assert.equal(registrations.length, 1);
-  assert.equal(registrations[0].definition.name, 'plugins.row.config');
-  assert.equal(registrations[0].definition.key, 'dsh-tool-compact-context#dsh-tool-compact-context');
-  assert.equal(registrations[0].definition.inject().configForm, form);
-  assert.equal(typeof registrations[0].view, 'function');
+  assert.equal(registrations.length, 2);
+  const row = registrations.find((item) => item.definition.name === 'plugins.row.config');
+  const bundle = registrations.find((item) => item.definition.name === 'plugins.bundle.config');
+  assert.equal(row.definition.key, 'dsh-tool-compact-context#dsh-tool-compact-context');
+  assert.equal(bundle.definition.key, 'dsh-tool-compact-context');
+  assert.equal(row.definition.inject().configForm, form);
+  assert.equal(bundle.definition.inject().configForm, form);
+  assert.equal(typeof row.view, 'function');
+  assert.equal(typeof bundle.view, 'function');
 });

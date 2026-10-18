@@ -41,11 +41,16 @@ function routeOf(owner: object | undefined): { provider: string; model: string }
  * The public PtcRuntime has no timeout hook; this wraps its public resolve()
  * method so an omitted run_code timeoutMs can be replaced per provider/model.
  * An explicit model-supplied timeoutMs (including null) is always respected.
- * The wrapper is installed only when configured and is restored on disposal.
+ * The wrapper is installed only when configured; the caller owns the
+ * returned restore function so a volatile config change can replace it.
+ * @param ctx plugin context
+ * @param config plain resolved row config
+ * @returns a disposer restoring the original resolve(), or undefined when
+ *   nothing was configured or the runtime seam is unavailable
  */
-export function installPtcTimeoutOverride(ctx: Context, config: ResolvedConfig): void {
+export function installPtcTimeoutOverride(ctx: Context, config: ResolvedConfig): (() => void) | undefined {
   const hasModelTimeouts = Object.keys(config.ptcModelTimeouts).length > 0;
-  if (config.ptcTimeoutMs <= 0 && !hasModelTimeouts) return;
+  if (config.ptcTimeoutMs <= 0 && !hasModelTimeouts) return undefined;
   const context = ctx as unknown as {
     ptcRuntime?: PtcRuntimeLike;
     get?: (name: string) => unknown;
@@ -54,9 +59,9 @@ export function installPtcTimeoutOverride(ctx: Context, config: ResolvedConfig):
   try {
     runtime = (context.get?.('ptcRuntime') ?? context.ptcRuntime) as PtcRuntimeLike | undefined;
   } catch {
-    return;
+    return undefined;
   }
-  if (runtime === undefined || typeof runtime.resolve !== 'function') return;
+  if (runtime === undefined || typeof runtime.resolve !== 'function') return undefined;
   const original = runtime.resolve;
   const choose = (request: PtcRunRequestLike): number | undefined => {
     if (request.timeoutMs !== undefined) return undefined;
@@ -77,10 +82,9 @@ export function installPtcTimeoutOverride(ctx: Context, config: ResolvedConfig):
   try {
     runtime.resolve = wrapped;
   } catch {
-    return;
+    return undefined;
   }
-  const effect = (ctx as unknown as { effect?: (execute: () => () => void) => void }).effect;
-  effect?.(() => () => {
+  return () => {
     if (runtime.resolve === wrapped) runtime.resolve = original;
-  });
+  };
 }

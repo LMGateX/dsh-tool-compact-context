@@ -27,14 +27,14 @@ From GitHub (includes built `lib` and `client` artifacts):
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.2
+pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.3
 ```
 
 Then add `dsh-tool-compact-context` after `@deepseek-ai/dsh-base` in `dsh.profile.bundles`, or add the insert entry from [cordis.patch.yml](cordis.patch.yml) to the profile patch. Restart the profile when hot reload is unavailable.
 
 ## Compatibility
 
-- Tested against DSH **0.2.1-rc.2** at runtime: 48/48 tests and TypeScript checks pass.
+- Tested against DSH **0.2.1-rc.2** at runtime: 50/50 tests and TypeScript checks pass.
 - The rc.1→rc.2 source diff for compaction, tools, PTC runtime and settings/plugin-manager packages is package-version-only, with no API changes.
 - `engines.dsh`: `>=0.2.1-alpha.4 <0.3.0`.
 
