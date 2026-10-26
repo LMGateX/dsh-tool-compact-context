@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.5
+
+- Verify DSH **0.2.1-rc.3** support: 51/51 tests and the TypeScript build pass against the rc.3 packages, and an isolated rc.3 Web boot (with `compaction-basic` enabled, mirroring the active profile) activates the plugin without warnings and serves its client module.
+- The rc.2→rc.3 diff contains no host API this plugin uses. The only related client change is additive: `pluginNavigation` gained `openList()`; `plugins.row.config`, `plugins.bundle.config`, the form contract, and the volatile-settings path are unchanged.
+- No code changes; compatibility metadata and documentation only.
+
 ## 0.4.4
 
 - Fix the Web settings form's dark-theme contrast. The form used `--dsw-alias-bg-primary` / `--dsw-alias-border-secondary`, which this DSH build does not define, so inputs and buttons fell back to white while the primary text stayed white. They now use the shell's real layer/border tokens (`--dsw-alias-bg-layer-3`, `--dsw-alias-border-l4`, `--dsw-radius-md`), and the checkboxes use the native accent color.

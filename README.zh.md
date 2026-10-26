@@ -102,10 +102,10 @@ DSH 有意不把 token 预算注入给模型；这个插件默认也不注入策
 
 ### 版本兼容性
 
-- 已在 **DSH 0.2.1-rc.2** 上运行完整测试（51/51）并通过 TypeScript 类型检查。
-- 对 rc.1→rc.2 的源码对比显示，压缩、tools、PTC runtime、settings/plugin-manager 相关包只有版本号变更，没有本插件使用的 API 变更。
-- rc.2 的 npm 包现已在本地安装；插件测试直接使用该版本运行。
-- `package.json` 声明 `engines.dsh: ">=0.2.1-alpha.4 <0.3.0"`，覆盖 alpha.4、rc.1、rc.2 与 0.2.1 stable；`@deepseek-ai/schemastery` 使用 `~3.18.4`，与 rc.1/rc.2 的 `~3.18.5` 兼容。
+- 已在 **DSH 0.2.1-rc.3** 上运行完整测试（51/51）并通过 TypeScript 类型检查；用独立的 rc.3 Web 实例启动时插件正常激活，客户端模块正常提供。
+- 对 rc.2→rc.3 的源码对比显示，本插件使用的宿主接口没有变化；唯一相关的客户端变更是新增 `pluginNavigation.openList()`，`plugins.row.config` / `plugins.bundle.config`、表单契约与 volatile 设置链路保持不变。
+- rc.3 的 npm 包已安装到本地隔离目录用于验证；插件测试直接使用该版本运行。
+- `package.json` 声明 `engines.dsh: ">=0.2.1-alpha.4 <0.3.0"`，覆盖 alpha.4、rc.1、rc.2、rc.3 与 0.2.1 stable；`@deepseek-ai/schemastery` 使用 `~3.18.4`，与 rc.3 的 `~3.18.5` 兼容。
 - 0.2.1 系列的相关 seam（`compactIfNeeded`、`compactRegion`、`PtcRuntime.resolve`、`configForms`/`plugins.row.config`）与 alpha.4 的类型声明一致；本插件没有依赖被移除的 mixed tool-presentation 模式或 invariant 导出。
 
 ### 构建
@@ -126,7 +126,7 @@ pnpm run build
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.4
+pnpm add github:LMGateX/dsh-tool-compact-context#v0.4.5
 ```
 
 也可以 clone 后本地安装：
