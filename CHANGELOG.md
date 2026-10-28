@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.6
+
+- Verify DSH **0.2.2-alpha.2** support: 51/51 tests and the TypeScript build pass against the alpha packages, and an isolated 0.2.2-alpha.2 Web boot activates the plugin and serves its client module.
+- The 0.2.2 tool-registry refactor still exports `ToolDefinition`/`ToolRunContext`; projection registration became async, but the read faces this plugin uses (`snapshot`, `cachedSnapshot`, `tokenMeter.measure`) are unchanged, and `dsh-compaction` is byte-identical. The retention selector in `dsh-compaction-basic` is unchanged.
+- No code changes; compatibility metadata and documentation only.
+
 ## 0.4.5
 
 - Verify DSH **0.2.1-rc.3** support: 51/51 tests and the TypeScript build pass against the rc.3 packages, and an isolated rc.3 Web boot (with `compaction-basic` enabled, mirroring the active profile) activates the plugin without warnings and serves its client module.
